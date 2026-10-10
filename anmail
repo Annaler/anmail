@@ -9,11 +9,17 @@ usage(){
 pls: anmail <command> [option]
 
 Commands:
-    send <To> [Subject]    compose&send a email via himalaya
+    send <To> [Subject]    compose&send an email via himalaya
+    list [options]...      list mails via himalaya 
+    read <ID> [options]... read mails via himalaya 
+
+Options:
+    -h, --help, help       get some info
+    -v, --version          get version of anmail
 
 Enviroment:
     MAIL_FROM sender here pls, e.g. "anmal" <4nma1@example.com>
-              export MAIL_FROM='"anmal" <4nma1$example.com>'
+              export MAIL_FROM='"anmal" <4nmai1@example.com>'
     EDITOR    Editor to compose the body of a mail (default: nvim)
 
 Requires:
@@ -25,7 +31,13 @@ brief(){
     cat <<'EOF'
 anmail: A thin wrapper around himalaya.
         Dev-ed for fun, for my convenience, by Annaler.
-Try 'anmail --help'
+Try 'anmail help'
+EOF
+}
+version(){
+    cat <<'EOF'
+anmail version 0.2.0 (2026-10-10)
+repo: https://github.com/Annaler/anmail
 EOF
 }
 
@@ -50,11 +62,16 @@ new_tmp(){
 }
 
 
-#function
+# Function
+
 #send
 cmd_send(){
     #header
-    local TO="${1:?pls: mail send <To> [Subject]}"
+    if [[ $# -eq 0 ]]; then
+        echo "pls: mail send <To> ([Subject])"
+        exit 1
+    fi
+    local TO="$1"
     local SUBJECT="${2:-}"
 
     new_tmp BODY
@@ -70,7 +87,12 @@ cmd_send(){
         exit 1
     fi
 
-    local FROM="${MAIL_FROM:?anmail: pls set MAIL_FROM. May try: export MAIL_FROM='\"Display Name\" <email@example.com>'}"
+    if [[ -z "${MAIL_FROM:-}" ]]; then
+        echo "anmail: pls set '\$MAIL_FROM'." 
+        echo "May try: export MAIL_FROM='\"Display Name\" <email@example.com>'" >&2
+        exit 1
+    fi
+    local FROM="$MAIL_FROM"
     
     #compose
     {
@@ -87,6 +109,20 @@ cmd_send(){
     rm -f "$BODY"
 }
 
+#list
+cmd_list(){
+    himalaya envelope list "$@"
+}
+
+#read
+cmd_read(){
+    if [[ $# -eq 0 ]] ; then
+        echo "pls: tell me what u wanna read."
+        echo "anmail: may using 'anmail read <ID>' or try 'anmail read --help"
+        exit 1
+    fi
+    himalaya message read "$@"
+}
 
 #mainu~
 cmd="${1:-}"
@@ -97,15 +133,25 @@ case "$cmd" in
     send)
         cmd_send "$@"
         ;;
+    list)
+        cmd_list "$@"
+        ;;
+    read)
+        cmd_read "$@"
+        ;;
     -h|--help|help)
         usage
+        ;;
+    -v|--version)
+        version
         ;;
     "")
         brief
         exit 1
         ;;
     *)
-        echo "anmail: Unknown command '$cmd'\n May try 'anmail -h'" >&2
+        echo "anmail: Unknown command '$cmd'" >&2
+        echo "May try 'anmail help'" >&2
         exit 1
         ;;
 esac

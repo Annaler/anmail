@@ -1,6 +1,7 @@
 # anmail
 
 A thin wrapper around [himalaya](https://github.com/pimalaya/himalaya).
+Version: 0.2.0
 
 ## What it is
 
@@ -51,22 +52,39 @@ Set sender in `~/.bashrc` or `~/.zshrc`:
 
 ```bash
 export MAIL_FROM='"Display Name" <email@example.com>'
+# or just
+export MAIL_FROM='email@example.com'
 ```
 
 ## Usage
 
 ```bash
-send <To> [Subject]
+anmail send <To> [Subject]
 ```
 Wrote body in editor, header from your command, 
 
-compose them to a mail and give it to `himalaya` by pipe. Then, `himalaya` "send it home".
+compose them to a mail and give it to `himalaya message send` by pipe.
+
+Then, `himalaya` "send them home".
+
+```bash
+anmail list [options]... 
+
+```
+Unvarnished pass command to `himalaya envelope list`. Simple as this--ashit.
+
+```bash
+anmail read <ID> [options]
+```
+Just like the previous one, but `himalaya message read`.
 
 ## Roadmap
 - [x] `send <To> [Subject]` -- compose and send a mail
-- [ ] `list`
-- [ ] `read <ID>`
+- [x] `list` -- just pass "words" to himalaya (primary relization)
+- [x] `read <ID>` -- same as the previous one
 - [ ] `reply <ID>`
 - [ ] ...
 
-
+### Version
+- '0.x.y' -- 'x' increments on new features, 'y' on fixes & optimizitions.
+- '1.0.0' -- if it is, it's the almost complete primary relization of basic features.
