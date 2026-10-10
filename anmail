@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Annaler
+# SPDX-License-Identifier: MPL-2.0
+set -euo pipefail
+
+#tip
+usage(){
+    cat <<'EOF'
+pls: anmail <command> [option]
+
+Commands:
+    send <To> [Subject]    compose&send a email via himalaya
+
+Enviroment:
+    MAIL_FROM sender here pls, e.g. "anmal" <4nma1@example.com>
+              export MAIL_FROM='"anmal" <4nma1$example.com>'
+    EDITOR    Editor to compose the body of a mail (default: nvim)
+
+Requires:
+    himalaya    https://github.com/pimalaya/himalaya
+    nvim (or EDITOR)    https://neovim.io
+EOF
+}
+brief(){
+    cat <<'EOF'
+anmail: A thin wrapper around himalaya.
+        Dev-ed for fun, for my convenience, by Annaler.
+Try 'anmail --help'
+EOF
+}
+
+
+#tmp: mk, clean
+TMP_FILES=()
+clean_up(){
+    local file
+  #for file in "${TMP_FILES[@]}"; do 
+    for file in "${TMP_FILES[@]+"${TMP_FILES[@]}"}"; do
+    # then bash <4.4 also can run
+        [[ -n "$file" ]] && rm -f "$file"
+    done
+}
+trap clean_up EXIT
+new_tmp(){
+    local var="$1"
+    local file
+    file="$(mktemp)"
+    TMP_FILES+=("$file")
+    printf -v "$var" '%s' "$file"
+}
+
+
+#function
+#send
+cmd_send(){
+    #header
+    local TO="${1:?pls: mail send <To> [Subject]}"
+    local SUBJECT="${2:-}"
+
+    new_tmp BODY
+
+    #nvim(or user's EDITOR) body
+    local editor="${EDITOR:-nvim}"
+    [[ -z "${EDITOR:-}" ]] && echo "anmail: EDITOR not set, using nvim." >&2
+    "$editor" -c 'set ft=mail' "$BODY"
+
+    #check text
+    if ! grep -q '[^[:space:]]' "$BODY"; then
+        echo "why send empty" >&2
+        exit 1
+    fi
+
+    local FROM="${MAIL_FROM:?anmail: pls set MAIL_FROM. May try: export MAIL_FROM='\"Display Name\" <email@example.com>'}"
+    
+    #compose
+    {
+        printf 'From: %s\n' "$FROM"
+        printf 'To: %s\n' "$TO"
+        #Subject can be none
+        if [[ -n "$SUBJECT" ]]; then
+            printf 'Subject: %s\n' "$SUBJECT"
+        fi
+        printf '\n'
+        cat "$BODY"
+    } | himalaya message send
+    
+    rm -f "$BODY"
+}
+
+
+#mainu~
+cmd="${1:-}"
+
+shift || true
+
+case "$cmd" in
+    send)
+        cmd_send "$@"
+        ;;
+    -h|--help|help)
+        usage
+        ;;
+    "")
+        brief
+        exit 1
+        ;;
+    *)
+        echo "anmail: Unknown command '$cmd'\n May try 'anmail -h'" >&2
+        exit 1
+        ;;
+esac
