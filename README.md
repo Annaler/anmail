@@ -2,7 +2,7 @@
 
 A thin wrapper around [himalaya](https://github.com/pimalaya/himalaya).
 
-**Version**: v0.3.0 (2026-10-11)
+**Version**: v0.3.1 (2026-10-11)
 
 ## What it is
 
@@ -34,7 +34,11 @@ This is where anmail starts. I can use `himalaya` in my own way now.
 ## Requirements
 
 - [himalaya](https://github.com/pimalaya/himalaya) — **IMAP/SMTP must be configured**
-- An `$EDITOR` (defaults to `nvim`)
+- An `VISUAL` [defaults to `$EDITOR` (defaults to `nvim`)]
+
+ps: `VISUAL`/`EDITOR` must be a single executable path.
+Values with arguments (e.g. `code --wait`) are not supported.
+If you really want, may tryna write a wrapper script?
 
 ## Install
 
@@ -48,12 +52,14 @@ chmod +x ~/.local/bin/anmail
 
 ## Configuration
 
-Account live in `~/.config/anmail/accounts.config`
-
+Accounts live in `ANMAIL_CONFIG` (default to `~/.config/anmail/accounts.config`):
 ```
-default="Your Name" <you@example.com>
+[using]
+current=me
+[accounts]
+me="Your Name" <you@example.com>
 work="Work Name" <work@company.com>
-personal=me@outlook.com
+personal=private_mail@outlook.com
 ```
 
 Manage them with `anmail set`:
@@ -61,11 +67,10 @@ Manage them with `anmail set`:
 ```bash
 anmail set work '"Work Name" <work@company.com>'
 anmail set -i
-anmail set (list)
+anmail set list
 ```
 
 The account name before '=' is what u pass to `-a / --account`
-Override the file path with `ANMAIL_CONFIG`
 
 ## Usage
 
@@ -94,13 +99,20 @@ anmail set -i [name] [from]
 ```
 List, set, or interactively edit accounts.
 
+```bash
+anmail use
+anmail use <account>
+```
+Show the account you're using,
+or switch to account `<account>`.
 
 ## Roadmap
 
 - [x] `send <To> [Subject]` — compose and send a mail
 - [x] `list` — just pass "words" to himalaya (1st working ver.)
 - [x] `read <ID>` — same as the previous one
-- [x] `set` (list) - set/list account config
+- [x] `set` (list) — set/list account config
+- [x] `use [account]` — switch account to use
 - [ ] `reply <ID>` — 考虑加入自动对原文保留
 - [ ] ...
 
@@ -108,3 +120,4 @@ List, set, or interactively edit accounts.
 
 - `0.x.y` — `x` increments on new features, `y` on fixes & optimizations.
 - `1.0.0` — if it is, it's the almost complete primary realization of basic features.
+ps: before `v1.0.0` is released, breaking changes may occur even if there are not major version updates.

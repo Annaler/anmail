@@ -14,9 +14,10 @@ Commands:
     list                   list mails via himalaya 
     read <ID>              read mails via himalaya 
     set [name] [from]      set or list accounts
+    use [account]          switch default account to use
 
-Global ptions:
-    -a, --account <name>   change to account in ANMAIL_CONFIG
+Global options:
+    -a, --account <name>   provisonally using account in ANMAIL_CONFIG
     -h, --help             get some info
 
 Options:
@@ -24,7 +25,8 @@ Options:
 
 Environment:
     ANMAIL_CONFIG          path to accounts file (default: ~/.config/anmail/accounts.config)
-    EDITOR                 Editor to compose the body of a mail (default: nvim)
+    VISUAL                 editor (takes precedence, default: EDITOR)
+    EDITOR                 editor to compose the body of a mail(default: nvim)
 
 Requires:
     himalaya    https://github.com/pimalaya/himalaya
@@ -37,12 +39,12 @@ brief(){
     cat <<'EOF'
 anmail: A thin wrapper around himalaya.
         Dev-ed for fun, for my convenience, by Annaler.
-Try 'anmail help'
+Try 'anmail --help'
 EOF
 }
 version(){
     cat <<'EOF'
-anmail version 0.3.0 (2026-10-11)
+anmail version 0.3.1 (2026-10-11)
 repo: https://github.com/Annaler/anmail
 EOF
 }
@@ -82,13 +84,34 @@ Arguments:
     [Subject]        optional subject
 
 Environment:
+    VISUAL           editor (takes precedence, default: EDITOR)
     EDITOR           editor to compose the body (default: nvim)
+
+    Must be a single executable path, arguments are not supported.
+    Vim series get 'set ft=mail' for mail syntax highlighting.
 
 Requires:
     an account (see 'anmail set --help')
 EOF
 }
+usage_use(){
+    cat <<'EOF'
+anmail use [account]
 
+switch the default used when '-a / --account' is not given.
+
+Forms:
+    anmail use             show current account
+    anmail use <account>   switch to account <account>
+
+Behavior:
+    Without -a, anmail use the account named by 'current=' in the
+    accounts file. If no 'current=' line exist, the first account
+    in the file will be.
+
+The 'current' name is reserved and can't be set with 'anmail set'.
+EOF
+}
 
 # Tmp: mk, clean
 TMP_FILES=()
@@ -116,14 +139,24 @@ accounts_file_path(){
 load_account_from(){
     local account="$1"
     local config
-    config="${accounts_file_path}"
+    config="$(accounts_file_path)"
 
     [[ -f "$config" ]] || return 1
 
     local line name from
+    local section=""
     while IFS= read -r line; do
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
         [[ -z "${line// }" ]] && continue
+        # section
+        if [[ "$line" =~ ^\[(.+)\]$ ]]; then
+            section="${BASH_REMATCH[1]}"
+            continue
+        fi
+
+        # only read waht is in [accounts]
+        [[ "$section" == "accounts" ]] || continue
+
         name="${line%%=*}"
         from="${line#*=}"
         if [[ "$name" == "$account" ]]; then
@@ -133,10 +166,122 @@ load_account_from(){
     done < "$config"
     return 1
 }
+resolve_account(){
+    local config
+    config="$(accounts_file_path)"
+
+    # -a
+    if [[ -n "$ACCOUNT" ]]; then
+        printf '%s' "$ACCOUNT"
+        return 0
+    fi
+    [[ -f "$config" ]] || return 1
+
+    local line name
+    local section=""
+    local using=""
+    local first_account=""
+
+    while IFS= read -r line; do
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+        [[ -z "${line// }" ]] && continue
+
+        if [[ "$line" =~ ^\[(.+)\]$ ]]; then
+            section="${BASH_REMATCH[1]}"
+            continue
+        fi
+
+        case "$section" in
+            using)#[using]
+                name="${line%%=*}"
+                if [[ "$name" == "current" ]]; then
+                    using="${line#*=}"
+                fi
+                ;;
+            accounts)#[accounts]
+                name="${line%%=*}"
+                [[ -z "$first_account" ]] && first_account="$name"
+                ;;
+        esac
+    done < "$config"
+
+    if [[ -n "$using" ]]; then
+        printf '%s' "$using"
+        return 0
+    fi
+
+    if [[ -n "$first_account" ]]; then
+        printf '%s' "$first_account"
+        return 0
+    fi
+
+    return 1
+}
+
+CURRENT_ACCOUNT="" #[using] current
+ACCOUNTS_NAMES=() #[accounts] 'name'=
+declare -A ACCOUNTS_MAP=()
+read_accounts_config(){
+    local config
+    config="$(accounts_file_path)"
+    CURRENT_ACCOUNT=""
+    ACCOUNTS_NAMES=()
+    ACCOUNTS_MAP=()
+
+    [[ -f "$config" ]] || return 0
+    
+    local line name from
+    local section=""
+
+    while IFS= read -r line; do
+        line="${line%%#*}"
+        [[ -z "${line//[[:space:]]/}" ]] && continue
+
+        if [[ "$line" =~ ^\[(.+)\]$ ]]; then
+            section="${BASH_REMATCH[1]}"
+            continue
+        fi
+        [[ "$line" == *=* ]] || continue
+
+        case "$section" in
+            using)
+                name="${line%%=*}"
+                [[ "$name" == "current" ]] && CURRENT_ACCOUNT="${line#*=}"
+                ;;
+            accounts)
+                name="${line%%=*}"
+                from="${line#*=}"
+                [[ -z "${ACCOUNTS_MAP[$name]:-}" ]] && ACCOUNTS_NAMES+=("$name")
+                ACCOUNTS_MAP["$name"]="$from"
+                ;;
+            *)
+                echo "anmail: Found unknown section '[$section]' in config." >&2
+                ;;
+        esac
+    done < "$config"
+}
+write_accounts_config(){
+    local config tmp
+    config="$(accounts_file_path)"
+    new_tmp tmp
+    mkdir -p "$(dirname "$config")"
+    
+    {
+        printf '[using]\n'
+        printf 'current=%s\n' "${CURRENT_ACCOUNT:-}"
+        printf '[accounts]\n'
+        local name
+        for name in "${ACCOUNTS_NAMES[@]}"; do
+            local from
+            from="${ACCOUNTS_MAP[$name]}"
+            printf '%s=%s\n' "$name" "$from"
+        done
+    } > "$tmp"
+    mv "$tmp" "$config"
+}
 
 
 # Function
-
 #send
 cmd_send(){
     #help
@@ -156,9 +301,20 @@ cmd_send(){
     new_tmp BODY
 
     #nvim(or user's EDITOR) body
-    local editor="${EDITOR:-nvim}"
-    [[ -z "${EDITOR:-}" ]] && echo "anmail: EDITOR not set, using nvim." >&2
-    "$editor" -c 'set ft=mail' "$BODY"
+    if [[ -z "${VISUAL:-}" && -z "${EDITOR}" ]]; then
+        echo "anmail: no EDITOR set, using nvim." >&2
+    fi
+        #just using any editor u want
+    local editor="${VISUAL:-${EDITOR:-nvim}}"
+    local editor_name
+    editor_name="$(basename "$editor")"
+    local -a editor_args=()
+    case 'editor_name' in
+        vim|nvim|gvim|mvim)
+            editor_args+=(-c 'set ft=mail')
+            ;;
+    esac
+    "$editor" "${editor_args[@]}" "$BODY"
 
     #check text
     if ! grep -q '[^[:space:]]' "$BODY"; then
@@ -204,7 +360,7 @@ cmd_read(){
 cmd_set(){
     local interactive=0
     local config
-    config="${accounts_file_path}"
+    config="$(accounts_file_path)"
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -240,7 +396,7 @@ cmd_set(){
             read -rp "account name: " name
         fi
         if  [[ -z "$name" ]]; then
-            echo "pls: tell me the account name."
+            echo "pls: tell me the account name." >&2
             exit 1
         fi
         if [[ $# -ge 2 ]]; then
@@ -264,25 +420,64 @@ cmd_set(){
             echo "anmail: name & from can't be empty." >&2
             exit 1
         else
-            echo "pls: tell me the account name."
-            exit 1
+            echo "pls: tell me the account name." >&2
+            exit 1 
         fi
     elif [[ -z "$from" ]]; then
-        echo "anmail: from can't be empty"
+        echo "anmail: from can't be empty" >&2
+        exit 1
+    fi
+    if [[ "$name" == "current" ]]; then
+        echo "anmail: 'current' is reserved, use 'anmail use' instead" >&2
         exit 1
     fi
 
-    mkdir -p "$(dirname "$config")"
-    touch "$config"
-
-    local tmp
-    new_tmp tmp
-    grep -v "^${name}=" "$config" > "$tmp" || true
-    mv "$tmp" "$config"
-    printf '%s=%s\n' "$name" "$from" >> "$config"
+    read_accounts_config
+    [[ -z "${ACCOUNTS_MAP[$name]:-}" ]] && ACCOUNTS_NAMES+=("$name")
+    ACCOUNTS_MAP["$name"]="$from"
+    write_accounts_config
     echo "anmail: account '$name' set successfully."
 }
+cmd_use(){
+    local config
+    config="$(accounts_file_path)"
 
+    if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+        usage_use
+        return
+    fi
+
+    #no args, show current
+    local current
+    if [[ $# -eq 0 ]]; then
+        if current="$(resolve_account)"; then
+            echo "anmail: current account: $current"
+        else
+            echo "anmail: no accounts configured." >&2
+            exit 1
+        fi
+        return
+    fi
+
+    local name="$1"
+    if [[ "$name" == "current" ]]; then
+        echo "anmail: 'current' is reserved." >&2
+        if current="$(resolve_account)"; then
+            echo "anmail: current account: $current"
+        fi
+        exit 1
+    fi
+    
+    read_accounts_config
+    if [[ -z "${ACCOUNTS_MAP[$name]:-}" ]]; then
+        echo "anmail: unknown account '$name'" >&2
+        echo "May: check $config" >&2
+        exit 1
+    fi
+    CURRENT_ACCOUNT="$name"
+    write_accounts_config
+    echo "anmail: now you're using '$name'."
+}
 
 #mainu~
 ACCOUNT=""
@@ -308,22 +503,39 @@ done
 cmd="${args[0]:-}"
 sub_args=("${args[@]:1}")
 
-# if just 'set', ok
-if [[ "$cmd" != "set" ]]; then
-    case "${sub_args[0]:-}" in
-        -h|--help)# let cmd_* handle sub help
-            : # skip, =~ pass
-            ;;
-        *)
-            [[ -z "$ACCOUNT" ]] && ACCOUNT="default"
-            FROM="$(load_account_from "$ACCOUNT")" || {
-                echo "anmail: unknown account '$ACCOUNT'" >&2
-                echo "May: Check $(accounts_file_path)" >&2
-                exit 1
-            }
-            ;;
-    esac
-fi
+# some one, skip the check
+case "$cmd" in
+    set|use|-h|--help|-v|--version|"")
+        :
+        ;;
+    send|list|read)
+        case "${sub_args[0]:-}" in
+            -h|--help)# let cmd_* handle sub-help
+                : # skip, =~ pass
+                ;;
+            *)
+                if [[ -z "$ACCOUNT" ]]; then
+                    ACCOUNT="$(resolve_account)" || {
+                        echo "anmail: no accounts configured." >&2
+                        echo "May try: anmail set -i" >&2
+                        exit 1
+                    }
+                fi
+                
+                FROM="$(load_account_from "$ACCOUNT")" || {
+                    echo "anmail: unknown account '$ACCOUNT'" >&2
+                    echo "May: Check $(accounts_file_path)" >&2
+                    exit 1
+                }
+                ;;
+        esac
+        ;;
+    *)
+        echo "anmail: unknown command '$cmd'" >&2
+        echo "May try: anmail --help" >&2
+        exit 1
+        ;;
+esac
 
 # cmd
 case "$cmd" in
@@ -339,6 +551,9 @@ case "$cmd" in
     set)#'|conf|config)'?
         cmd_set "${sub_args[@]}"
         ;;
+    use)
+        cmd_use "${sub_args[@]}"
+        ;;
     -h|--help)
         usage
         ;;
@@ -350,7 +565,7 @@ case "$cmd" in
         exit 1
         ;;
     *)
-        echo "anmail: Unknown command '$cmd'" >&2
+        echo "anmail: unknown command '$cmd'" >&2
         echo "May try: anmail help" >&2
         exit 1
         ;;
