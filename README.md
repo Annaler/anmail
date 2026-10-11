@@ -1,44 +1,44 @@
 # anmail
 
 A thin wrapper around [himalaya](https://github.com/pimalaya/himalaya).
-Version: 0.2.0
+
+**Version**: v0.3.0 (2026-10-11)
 
 ## What it is
 
-anmail is a thin wrapper around himalaya，which aims to fill the gaps in `himalaya`'s interaction.
+anmail is a thin wrapper around himalaya that aims to fill the gaps in `himalaya`'s interaction.
 
-It doesn't implement IMAP/SMTP, nor does it manage anthentication or passwords.
+It doesn't implement IMAP/SMTP, nor does it manage authentication or passwords.
 
 All receiving, sending, authentication, and synchronization are handled by `himalaya`.
 
 ## Why
 
 `himalaya`'s `message compose` doesn't auto open an editor,
-and `message send` requires the 'stdin' to be a complete MIME message.
+and `message send` requires the `stdin` to be a complete MIME message.
 
 Composing mail directly with `himalaya` means either assembling headers
+in the terminal, or relying on a Vim/Neovim plugin — and
+the plugin will hang when it calls `sudo` from a child process without a TTY.
 
-in the terminal, or relying on a Vim/Neovim plugin -- and
-
-the plugin will hangs when it calls `sudo` from a child process without a TTY.
-
-`anmail` decouples these two step:
+`anmail` decouples these two steps:
 
 1. The editor runs in the foreground of the terminal
 
-2. After you save&quit, the same shell process pipe the content to `himalaya`.
+2. After you save & quit, the same shell process pipes the content to `himalaya`.
 
-sudo has a TTY now, and the editor has interaction, each does it job.
+Now sudo has a TTY and the editor stays interactive — each does its job.
 
-This is where anmail starts. I can use `himalaya` in my way now.
+This is where anmail starts. I can use `himalaya` in my own way now.
 
 ## Requirements
-- [himalaya](https://github.com/pimalaya/himalaya) —— **IMAP/SMTP must be configured**
-- An `$EDITOR` ( defaults to `nvim`)
+
+- [himalaya](https://github.com/pimalaya/himalaya) — **IMAP/SMTP must be configured**
+- An `$EDITOR` (defaults to `nvim`)
 
 ## Install
 
-put `anmail` in `$PATH`(e.g. `~/.local/bin/`) , and `chmod +x` the guy:
+Put `anmail` in `$PATH` (e.g. `~/.local/bin/`), and `chmod +x` the guy:
 
 ```bash
 git clone https://github.com/Annaler/anmail && cd anmail
@@ -48,43 +48,63 @@ chmod +x ~/.local/bin/anmail
 
 ## Configuration
 
-Set sender in `~/.bashrc` or `~/.zshrc`:
+Account live in `~/.config/anmail/accounts.config`
+
+```
+default="Your Name" <you@example.com>
+work="Work Name" <work@company.com>
+personal=me@outlook.com
+```
+
+Manage them with `anmail set`:
 
 ```bash
-export MAIL_FROM='"Display Name" <email@example.com>'
-# or just
-export MAIL_FROM='email@example.com'
+anmail set work '"Work Name" <work@company.com>'
+anmail set -i
+anmail set (list)
 ```
+
+The account name before '=' is what u pass to `-a / --account`
+Override the file path with `ANMAIL_CONFIG`
 
 ## Usage
 
 ```bash
 anmail send <To> [Subject]
 ```
-Wrote body in editor, header from your command, 
-
-compose them to a mail and give it to `himalaya message send` by pipe.
-
+Write the body in your editor; the header comes from your command.
+`anmail` composes them into a mail and pipes it to `himalaya message send`.
 Then, `himalaya` "send them home".
 
 ```bash
-anmail list [options]... 
-
+anmail list [options]...
 ```
-Unvarnished pass command to `himalaya envelope list`. Simple as this--ashit.
+Passes the command straight through to `himalaya envelope list`.
+Simple as this — ashit.
 
 ```bash
 anmail read <ID> [options]
 ```
 Just like the previous one, but `himalaya message read`.
 
+```bash
+anmail set list
+anmail set <name> <from>
+anmail set -i [name] [from]
+```
+List, set, or interactively edit accounts.
+
+
 ## Roadmap
-- [x] `send <To> [Subject]` -- compose and send a mail
-- [x] `list` -- just pass "words" to himalaya (primary relization)
-- [x] `read <ID>` -- same as the previous one
-- [ ] `reply <ID>`
+
+- [x] `send <To> [Subject]` — compose and send a mail
+- [x] `list` — just pass "words" to himalaya (1st working ver.)
+- [x] `read <ID>` — same as the previous one
+- [x] `set` (list) - set/list account config
+- [ ] `reply <ID>` — 考虑加入自动对原文保留
 - [ ] ...
 
-### Version
-- '0.x.y' -- 'x' increments on new features, 'y' on fixes & optimizitions.
-- '1.0.0' -- if it is, it's the almost complete primary relization of basic features.
+## Versioning
+
+- `0.x.y` — `x` increments on new features, `y` on fixes & optimizations.
+- `1.0.0` — if it is, it's the almost complete primary realization of basic features.

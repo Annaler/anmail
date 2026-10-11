@@ -3,28 +3,34 @@
 # SPDX-License-Identifier: MPL-2.0
 set -euo pipefail
 
-#tip
+
+# Tips
 usage(){
     cat <<'EOF'
 pls: anmail <command> [option]
 
 Commands:
-    send <To> [Subject]    compose&send an email via himalaya
-    list [options]...      list mails via himalaya 
-    read <ID> [options]... read mails via himalaya 
+    send <To> [Subject]    compose & send an email via himalaya
+    list                   list mails via himalaya 
+    read <ID>              read mails via himalaya 
+    set [name] [from]      set or list accounts
+
+Global ptions:
+    -a, --account <name>   change to account in ANMAIL_CONFIG
+    -h, --help             get some info
 
 Options:
-    -h, --help, help       get some info
     -v, --version          get version of anmail
 
-Enviroment:
-    MAIL_FROM sender here pls, e.g. "anmal" <4nma1@example.com>
-              export MAIL_FROM='"anmal" <4nmai1@example.com>'
-    EDITOR    Editor to compose the body of a mail (default: nvim)
+Environment:
+    ANMAIL_CONFIG          path to accounts file (default: ~/.config/anmail/accounts.config)
+    EDITOR                 Editor to compose the body of a mail (default: nvim)
 
 Requires:
     himalaya    https://github.com/pimalaya/himalaya
     nvim (or EDITOR)    https://neovim.io
+
+Run 'anmail <command> --help' for sub-help of command.
 EOF
 }
 brief(){
@@ -36,17 +42,59 @@ EOF
 }
 version(){
     cat <<'EOF'
-anmail version 0.2.0 (2026-10-10)
+anmail version 0.3.0 (2026-10-11)
 repo: https://github.com/Annaler/anmail
+EOF
+}
+usage_set(){
+    cat <<'EOF'
+anmail set [options] [name] [from]
+
+Manage accounts in the accounts file.
+
+Forms:
+    anmail set (list)              list accounts
+    anmail set <name> <from>       set or overwrite an account
+    anmail set -i [name] [from]    interactive mode
+
+Accounts file format:
+    <name>=<from>
+    tag="Display Name" <you@example.com>
+    work="Work Name" <work@company.com>
+
+File location:
+    $ANMAIL_CONFIG, or '~/.config/anmail/accounts.config' by default.
+
+Examples:
+    anmail set work '"Work Name" <work@company.com>'
+    anmail set -i
+    anmail set -i personal
+EOF
+}
+usage_send(){
+    cat <<'EOF'
+anmail send <To> [Subject]
+
+compose a mail in $EDITOR and send it via himalaya.
+
+Arguments:
+    <To>             recipient address
+    [Subject]        optional subject
+
+Environment:
+    EDITOR           editor to compose the body (default: nvim)
+
+Requires:
+    an account (see 'anmail set --help')
 EOF
 }
 
 
-#tmp: mk, clean
+# Tmp: mk, clean
 TMP_FILES=()
 clean_up(){
     local file
-  #for file in "${TMP_FILES[@]}"; do 
+   #for file in "${TMP_FILES[@]}"; do 
     for file in "${TMP_FILES[@]+"${TMP_FILES[@]}"}"; do
     # then bash <4.4 also can run
         [[ -n "$file" ]] && rm -f "$file"
@@ -61,14 +109,45 @@ new_tmp(){
     printf -v "$var" '%s' "$file"
 }
 
+# Accounts
+accounts_file_path(){
+    printf '%s' "${ANMAIL_CONFIG:-$HOME/.config/anmail/accounts.config}"
+}
+load_account_from(){
+    local account="$1"
+    local config
+    config="${accounts_file_path}"
+
+    [[ -f "$config" ]] || return 1
+
+    local line name from
+    while IFS= read -r line; do
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+        [[ -z "${line// }" ]] && continue
+        name="${line%%=*}"
+        from="${line#*=}"
+        if [[ "$name" == "$account" ]]; then
+            printf '%s' "$from"
+            return 0
+        fi
+    done < "$config"
+    return 1
+}
+
 
 # Function
 
 #send
 cmd_send(){
+    #help
+    if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+        usage_send
+        return
+    fi
+
     #header
     if [[ $# -eq 0 ]]; then
-        echo "pls: mail send <To> ([Subject])"
+        echo "pls: mail send <To> ([Subject])" >&2
         exit 1
     fi
     local TO="$1"
@@ -87,13 +166,6 @@ cmd_send(){
         exit 1
     fi
 
-    if [[ -z "${MAIL_FROM:-}" ]]; then
-        echo "anmail: pls set '\$MAIL_FROM'." 
-        echo "May try: export MAIL_FROM='\"Display Name\" <email@example.com>'" >&2
-        exit 1
-    fi
-    local FROM="$MAIL_FROM"
-    
     #compose
     {
         printf 'From: %s\n' "$FROM"
@@ -104,42 +176,170 @@ cmd_send(){
         fi
         printf '\n'
         cat "$BODY"
-    } | himalaya message send
+    } | himalaya message send --account "$ACCOUNT"
     
-    rm -f "$BODY"
+    rm -f "$BODY" # sometimes, trap will not work 
 }
 
 #list
 cmd_list(){
-    himalaya envelope list "$@"
+    himalaya envelope list --account "$ACCOUNT" "$@"
 }
 
 #read
 cmd_read(){
+    if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+        himalaya message read --help
+        return
+    fi
     if [[ $# -eq 0 ]] ; then
         echo "pls: tell me what u wanna read."
         echo "anmail: may using 'anmail read <ID>' or try 'anmail read --help"
         exit 1
     fi
-    himalaya message read "$@"
+    himalaya message read --account "$ACCOUNT" "$@"
 }
 
+#set
+cmd_set(){
+    local interactive=0
+    local config
+    config="${accounts_file_path}"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help)
+                usage_set
+                return
+                ;;
+            -i|--interactive)
+                interactive=1
+                shift
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+
+    #no args/interactive -> list
+    if [[ "${1:-}" == "list" || ( $# -eq 0 && $interactive -eq 0 ) ]]; then
+        if [[ -f "$config" ]]; then
+            cat "$config"
+        else
+            echo "anmail: no account in $config" >&2
+        fi
+        return
+    fi
+
+    local name from
+    if [[ $interactive -eq 1 ]]; then
+        if [[ $# -ge 1 ]]; then
+            name="$1"
+        else
+            read -rp "account name: " name
+        fi
+        if  [[ -z "$name" ]]; then
+            echo "pls: tell me the account name."
+            exit 1
+        fi
+        if [[ $# -ge 2 ]]; then
+            from="$2"
+        else
+            read -rp "from for '$name': " from
+        fi
+    else
+        if [[ $# -ne 2 ]]; then
+            echo "anmail: usage: anmail set <name> <from>" >&2
+            echo "    e.g. anmail set work '\"Work Name\" <work@company.com>'" >&2
+            echo "    or:  anmail set -i [name] [from]" >&2
+            exit 1
+        fi
+        name="$1"
+        from="$2"
+    fi
+
+    if [[ -z "$name" ]]; then
+        if [[ -z "$from" ]]; then
+            echo "anmail: name & from can't be empty." >&2
+            exit 1
+        else
+            echo "pls: tell me the account name."
+            exit 1
+        fi
+    elif [[ -z "$from" ]]; then
+        echo "anmail: from can't be empty"
+        exit 1
+    fi
+
+    mkdir -p "$(dirname "$config")"
+    touch "$config"
+
+    local tmp
+    new_tmp tmp
+    grep -v "^${name}=" "$config" > "$tmp" || true
+    mv "$tmp" "$config"
+    printf '%s=%s\n' "$name" "$from" >> "$config"
+    echo "anmail: account '$name' set successfully."
+}
+
+
 #mainu~
-cmd="${1:-}"
+ACCOUNT=""
+args=()
 
-shift || true
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -a|--account)
+            ACCOUNT="$2"
+            shift 2
+            ;;
+        --account=*)
+            ACCOUNT="${1#*=}"
+            shift
+            ;;
+        *)
+            args+=("$1")
+            shift
+            ;;
+    esac
+done
 
+cmd="${args[0]:-}"
+sub_args=("${args[@]:1}")
+
+# if just 'set', ok
+if [[ "$cmd" != "set" ]]; then
+    case "${sub_args[0]:-}" in
+        -h|--help)# let cmd_* handle sub help
+            : # skip, =~ pass
+            ;;
+        *)
+            [[ -z "$ACCOUNT" ]] && ACCOUNT="default"
+            FROM="$(load_account_from "$ACCOUNT")" || {
+                echo "anmail: unknown account '$ACCOUNT'" >&2
+                echo "May: Check $(accounts_file_path)" >&2
+                exit 1
+            }
+            ;;
+    esac
+fi
+
+# cmd
 case "$cmd" in
     send)
-        cmd_send "$@"
+        cmd_send "${sub_args[@]}"
         ;;
     list)
-        cmd_list "$@"
+        cmd_list "${sub_args[@]}"
         ;;
     read)
-        cmd_read "$@"
+        cmd_read "${sub_args[@]}"
         ;;
-    -h|--help|help)
+    set)#'|conf|config)'?
+        cmd_set "${sub_args[@]}"
+        ;;
+    -h|--help)
         usage
         ;;
     -v|--version)
@@ -151,7 +351,7 @@ case "$cmd" in
         ;;
     *)
         echo "anmail: Unknown command '$cmd'" >&2
-        echo "May try 'anmail help'" >&2
+        echo "May try: anmail help" >&2
         exit 1
         ;;
 esac
