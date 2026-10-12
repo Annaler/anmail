@@ -2,7 +2,7 @@
 
 A thin wrapper around [himalaya](https://github.com/pimalaya/himalaya).
 
-**Version**: v0.3.1 (2026-10-11)
+**Version**: v0.3.2 (2026-10-12)
 
 ## What it is
 

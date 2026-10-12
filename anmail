@@ -44,7 +44,7 @@ EOF
 }
 version(){
     cat <<'EOF'
-anmail version 0.3.1 (2026-10-11)
+anmail version 0.3.2 (2026-10-12)
 repo: https://github.com/Annaler/anmail
 EOF
 }
@@ -309,7 +309,7 @@ cmd_send(){
     local editor_name
     editor_name="$(basename "$editor")"
     local -a editor_args=()
-    case 'editor_name' in
+    case "$editor_name" in
         vim|nvim|gvim|mvim)
             editor_args+=(-c 'set ft=mail')
             ;;
