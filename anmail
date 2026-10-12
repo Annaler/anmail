@@ -13,11 +13,11 @@ Commands:
     send <To> [Subject]    compose & send an email via himalaya
     list                   list mails via himalaya 
     read <ID>              read mails via himalaya 
-    set [name] [from]      set or list accounts
-    use [account]          switch default account to use
+    set [tag] [from]      set or list accounts
+    use [tag]          switch default account to use
 
 Global options:
-    -a, --account <name>   provisonally using account in ANMAIL_CONFIG
+    -t, --tag <tag>        provisonally using account tagged as <tag> in ANMAIL_CONFIG
     -h, --help             get some info
 
 Options:
@@ -29,8 +29,9 @@ Environment:
     EDITOR                 editor to compose the body of a mail(default: nvim)
 
 Requires:
+    bash        needed version 3.0+
     himalaya    https://github.com/pimalaya/himalaya
-    nvim (or EDITOR)    https://neovim.io
+    nvim (or editor)    https://neovim.io
 
 Run 'anmail <command> --help' for sub-help of command.
 EOF
@@ -44,24 +45,25 @@ EOF
 }
 version(){
     cat <<'EOF'
-anmail version 0.3.2 (2026-10-12)
+anmail version 0.3.3 (2026-10-12)
 repo: https://github.com/Annaler/anmail
 EOF
 }
 usage_set(){
     cat <<'EOF'
-anmail set [options] [name] [from]
+anmail set [options] [tag] [from]
 
 Manage accounts in the accounts file.
+The <tag>, should be same as <tag> in  [accounts.<tag>] (himalaya's config in ~/.config/himalaya/config.toml)
 
 Forms:
     anmail set (list)              list accounts
-    anmail set <name> <from>       set or overwrite an account
-    anmail set -i [name] [from]    interactive mode
+    anmail set <tag> <from>       set or overwrite an account
+    anmail set -i [tag] [from]    interactive mode
 
 Accounts file format:
-    <name>=<from>
-    tag="Display Name" <you@example.com>
+    <tag>=<from>
+    Tag="Display Name" <you@example.com>
     work="Work Name" <work@company.com>
 
 File location:
@@ -98,14 +100,14 @@ usage_use(){
     cat <<'EOF'
 anmail use [account]
 
-switch the default used when '-a / --account' is not given.
+switch the default used when '-t / --tag' is not given.
 
 Forms:
     anmail use             show current account
-    anmail use <account>   switch to account <account>
+    anmail use <tag>       switch to account tagged as <tag>
 
 Behavior:
-    Without -a, anmail use the account named by 'current=' in the
+    Without -t, anmail use the account named by 'current=' in the
     accounts file. If no 'current=' line exist, the first account
     in the file will be.
 
@@ -136,15 +138,29 @@ new_tmp(){
 accounts_file_path(){
     printf '%s' "${ANMAIL_CONFIG:-$HOME/.config/anmail/accounts.config}"
 }
-load_account_from(){
-    local account="$1"
+
+CURRENT_ACCOUNT="" #[using] current
+ACCOUNTS_TAGS=() #[accounts] 'tag'=
+declare -A ACCOUNTS_MAP=()
+
+#parse to reuse
+parse_accounts_file(){
+    local need_current=0 need_accounts=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            current) need_current=1; shift ;;
+            accounts) need_accounts=1; shift;;
+            all)     need_current=1; need_accounts=1; shift ;;
+            *) echo "unknown args: '$1'"; shift ;;
+        esac
+    done
+    
     local config
     config="$(accounts_file_path)"
 
-    [[ -f "$config" ]] || return 1
-
-    local line name from
-    local section=""
+    #paese
+    local line tag from section=""
+    local cleared_current=0 cleared_accounts=0
     while IFS= read -r line; do
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
         [[ -z "${line// }" ]] && continue
@@ -153,112 +169,75 @@ load_account_from(){
             section="${BASH_REMATCH[1]}"
             continue
         fi
+        [[ "$line" == *=* ]] || continue
 
-        # only read waht is in [accounts]
-        [[ "$section" == "accounts" ]] || continue
-
-        name="${line%%=*}"
-        from="${line#*=}"
-        if [[ "$name" == "$account" ]]; then
-            printf '%s' "$from"
-            return 0
-        fi
+        case "$section" in
+            using)#[using]
+                [[ "$need_current" -ne 1 ]] && continue
+                [[ "$cleared_current" -eq 0 ]] && { CURRENT_ACCOUNT=""; cleared_current=1; }
+                tag="${line%%=*}"
+                [[ "$tag" == "current" ]] && CURRENT_ACCOUNT="${line#*=}"
+                ;;
+            accounts)#[accounts]
+                [[ "$need_accounts" -ne 1 ]] && continue
+                [[ "$cleared_accounts" -eq 0 ]] && { ACCOUNTS_TAGS=(); ACCOUNTS_MAP=(); cleared_accounts=1; }
+                tag="${line%%=*}"
+                from="${line#*=}"
+                [[ -z "${ACCOUNTS_MAP[$tag]:-}" ]] && ACCOUNTS_TAGS+=("$tag")
+                ACCOUNTS_MAP["$tag"]="$from"
+                ;;
+        esac
     done < "$config"
-    return 1
+
+}
+
+load_account_from(){
+    local account="$1"
+    local config
+    config="$(accounts_file_path)"
+
+    [[ -f "$config" ]] || return 1
+
+    parse_accounts_file accounts
+
+    local from
+    from="${ACCOUNTS_MAP[$account]:-}"
+    [[ -n "$from" ]] || return 1
+    printf '%s' "$from"
 }
 resolve_account(){
     local config
     config="$(accounts_file_path)"
 
-    # -a
-    if [[ -n "$ACCOUNT" ]]; then
-        printf '%s' "$ACCOUNT"
+    # -t
+    if [[ -n "$TAG" ]]; then
+        printf '%s' "$TAG"
         return 0
     fi
     [[ -f "$config" ]] || return 1
 
-    local line name
-    local section=""
-    local using=""
-    local first_account=""
-
-    while IFS= read -r line; do
-        [[ "$line" =~ ^[[:space:]]*# ]] && continue
-        [[ -z "${line// }" ]] && continue
-
-        if [[ "$line" =~ ^\[(.+)\]$ ]]; then
-            section="${BASH_REMATCH[1]}"
-            continue
-        fi
-
-        case "$section" in
-            using)#[using]
-                name="${line%%=*}"
-                if [[ "$name" == "current" ]]; then
-                    using="${line#*=}"
-                fi
-                ;;
-            accounts)#[accounts]
-                name="${line%%=*}"
-                [[ -z "$first_account" ]] && first_account="$name"
-                ;;
-        esac
-    done < "$config"
-
-    if [[ -n "$using" ]]; then
-        printf '%s' "$using"
+    parse_accounts_file current
+    if [[ -n "$CURRENT_ACCOUNT" ]]; then
+        printf '%s' "$CURRENT_ACCOUNT"
         return 0
     fi
 
-    if [[ -n "$first_account" ]]; then
-        printf '%s' "$first_account"
+    parse_accounts_file accounts
+    if [[ ${#ACCOUNTS_TAGS[@]} -gt 0 ]]; then
+        printf '%s' "${ACCOUNTS_TAGS[0]}"
         return 0
     fi
 
     return 1
 }
 
-CURRENT_ACCOUNT="" #[using] current
-ACCOUNTS_NAMES=() #[accounts] 'name'=
-declare -A ACCOUNTS_MAP=()
 read_accounts_config(){
     local config
     config="$(accounts_file_path)"
-    CURRENT_ACCOUNT=""
-    ACCOUNTS_NAMES=()
-    ACCOUNTS_MAP=()
 
     [[ -f "$config" ]] || return 0
     
-    local line name from
-    local section=""
-
-    while IFS= read -r line; do
-        line="${line%%#*}"
-        [[ -z "${line//[[:space:]]/}" ]] && continue
-
-        if [[ "$line" =~ ^\[(.+)\]$ ]]; then
-            section="${BASH_REMATCH[1]}"
-            continue
-        fi
-        [[ "$line" == *=* ]] || continue
-
-        case "$section" in
-            using)
-                name="${line%%=*}"
-                [[ "$name" == "current" ]] && CURRENT_ACCOUNT="${line#*=}"
-                ;;
-            accounts)
-                name="${line%%=*}"
-                from="${line#*=}"
-                [[ -z "${ACCOUNTS_MAP[$name]:-}" ]] && ACCOUNTS_NAMES+=("$name")
-                ACCOUNTS_MAP["$name"]="$from"
-                ;;
-            *)
-                echo "anmail: Found unknown section '[$section]' in config." >&2
-                ;;
-        esac
-    done < "$config"
+    parse_accounts_file current accounts
 }
 write_accounts_config(){
     local config tmp
@@ -270,11 +249,11 @@ write_accounts_config(){
         printf '[using]\n'
         printf 'current=%s\n' "${CURRENT_ACCOUNT:-}"
         printf '[accounts]\n'
-        local name
-        for name in "${ACCOUNTS_NAMES[@]}"; do
+        local tag
+        for tag in "${ACCOUNTS_TAGS[@]}"; do
             local from
-            from="${ACCOUNTS_MAP[$name]}"
-            printf '%s=%s\n' "$name" "$from"
+            from="${ACCOUNTS_MAP[$tag]}"
+            printf '%s=%s\n' "$tag" "$from"
         done
     } > "$tmp"
     mv "$tmp" "$config"
@@ -332,14 +311,14 @@ cmd_send(){
         fi
         printf '\n'
         cat "$BODY"
-    } | himalaya message send --account "$ACCOUNT"
+    } | himalaya message send --account "$TAG"
     
     rm -f "$BODY" # sometimes, trap will not work 
 }
 
 #list
 cmd_list(){
-    himalaya envelope list --account "$ACCOUNT" "$@"
+    himalaya envelope list --account "$TAG" "$@"
 }
 
 #read
@@ -353,7 +332,7 @@ cmd_read(){
         echo "anmail: may using 'anmail read <ID>' or try 'anmail read --help"
         exit 1
     fi
-    himalaya message read --account "$ACCOUNT" "$@"
+    himalaya message read --account "$TAG" "$@"
 }
 
 #set
@@ -388,55 +367,56 @@ cmd_set(){
         return
     fi
 
-    local name from
+    local tag from
     if [[ $interactive -eq 1 ]]; then
         if [[ $# -ge 1 ]]; then
-            name="$1"
+            tag="$1"
         else
-            read -rp "account name: " name
+            read -rp "account tag: " tag
         fi
-        if  [[ -z "$name" ]]; then
-            echo "pls: tell me the account name." >&2
+        if  [[ -z "$tag" ]]; then
+            echo "pls: tell me the account tag." >&2
             exit 1
         fi
         if [[ $# -ge 2 ]]; then
             from="$2"
         else
-            read -rp "from for '$name': " from
+            read -rp "from for '$tag': " from
         fi
     else
         if [[ $# -ne 2 ]]; then
-            echo "anmail: usage: anmail set <name> <from>" >&2
+            echo "anmail: usage: anmail set <tag> <from>" >&2
             echo "    e.g. anmail set work '\"Work Name\" <work@company.com>'" >&2
-            echo "    or:  anmail set -i [name] [from]" >&2
+            echo "    or:  anmail set -i [tag] [from]" >&2
             exit 1
         fi
-        name="$1"
+        tag="$1"
         from="$2"
     fi
 
-    if [[ -z "$name" ]]; then
+    if [[ -z "$tag" ]]; then
         if [[ -z "$from" ]]; then
-            echo "anmail: name & from can't be empty." >&2
+            echo "anmail: tag & from can't be empty." >&2
             exit 1
         else
-            echo "pls: tell me the account name." >&2
+            echo "pls: tell me the account tag." >&2
             exit 1 
         fi
     elif [[ -z "$from" ]]; then
         echo "anmail: from can't be empty" >&2
         exit 1
     fi
-    if [[ "$name" == "current" ]]; then
+    if [[ "$tag" == "current" ]]; then
         echo "anmail: 'current' is reserved, use 'anmail use' instead" >&2
         exit 1
     fi
 
     read_accounts_config
-    [[ -z "${ACCOUNTS_MAP[$name]:-}" ]] && ACCOUNTS_NAMES+=("$name")
-    ACCOUNTS_MAP["$name"]="$from"
+    [[ -z "${ACCOUNTS_MAP[$tag]:-}" ]] && ACCOUNTS_TAGS+=("$tag")
+    ACCOUNTS_MAP["$tag"]="$from"
+    [[ -z "$CURRENT_ACCOUNT" ]] && CURRENT_ACCOUNT="$tag"
     write_accounts_config
-    echo "anmail: account '$name' set successfully."
+    echo "anmail: account '$tag' set successfully."
 }
 cmd_use(){
     local config
@@ -459,8 +439,8 @@ cmd_use(){
         return
     fi
 
-    local name="$1"
-    if [[ "$name" == "current" ]]; then
+    local tag="$1"
+    if [[ "$tag" == "current" ]]; then
         echo "anmail: 'current' is reserved." >&2
         if current="$(resolve_account)"; then
             echo "anmail: current account: $current"
@@ -469,28 +449,28 @@ cmd_use(){
     fi
     
     read_accounts_config
-    if [[ -z "${ACCOUNTS_MAP[$name]:-}" ]]; then
-        echo "anmail: unknown account '$name'" >&2
+    if [[ -z "${ACCOUNTS_MAP[$tag]:-}" ]]; then
+        echo "anmail: unknown account '$tag'" >&2
         echo "May: check $config" >&2
         exit 1
     fi
-    CURRENT_ACCOUNT="$name"
+    CURRENT_ACCOUNT="$tag"
     write_accounts_config
-    echo "anmail: now you're using '$name'."
+    echo "anmail: now you're using '$tag'."
 }
 
 #mainu~
-ACCOUNT=""
+TAG=""
 args=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        -a|--account)
-            ACCOUNT="$2"
+        -t|--tag)
+            TAG="$2"
             shift 2
             ;;
-        --account=*)
-            ACCOUNT="${1#*=}"
+        --tag=*)
+            TAG="${1#*=}"
             shift
             ;;
         *)
@@ -514,16 +494,16 @@ case "$cmd" in
                 : # skip, =~ pass
                 ;;
             *)
-                if [[ -z "$ACCOUNT" ]]; then
-                    ACCOUNT="$(resolve_account)" || {
+                if [[ -z "$TAG" ]]; then
+                    TAG="$(resolve_account)" || {
                         echo "anmail: no accounts configured." >&2
                         echo "May try: anmail set -i" >&2
                         exit 1
                     }
                 fi
-                
-                FROM="$(load_account_from "$ACCOUNT")" || {
-                    echo "anmail: unknown account '$ACCOUNT'" >&2
+ 
+                FROM="$(load_account_from "$TAG")" || {
+                    echo "anmail: unknown account '$TAG'" >&2
                     echo "May: Check $(accounts_file_path)" >&2
                     exit 1
                 }

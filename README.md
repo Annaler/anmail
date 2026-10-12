@@ -2,7 +2,7 @@
 
 A thin wrapper around [himalaya](https://github.com/pimalaya/himalaya).
 
-**Version**: v0.3.2 (2026-10-12)
+**Version**: v0.3.3 (2026-10-12)
 
 ## What it is
 
@@ -57,6 +57,7 @@ Accounts live in `ANMAIL_CONFIG` (default to `~/.config/anmail/accounts.config`)
 [using]
 current=me
 [accounts]
+#tag=from
 me="Your Name" <you@example.com>
 work="Work Name" <work@company.com>
 personal=private_mail@outlook.com
@@ -70,7 +71,10 @@ anmail set -i
 anmail set list
 ```
 
-The account name before '=' is what u pass to `-a / --account`
+The account tag before '=' is what u pass to `-a / --account`,
+so the <tag> must be the same as what u configurated in himalaya's config
+       ^   ^ => [accounts.<tag>] <- ~/.config/himalaya/config.toml
+                          ^   ^
 
 ## Usage
 
@@ -94,17 +98,17 @@ Just like the previous one, but `himalaya message read`.
 
 ```bash
 anmail set list
-anmail set <name> <from>
-anmail set -i [name] [from]
+anmail set <tag> <from>
+anmail set -i [tag] [from]
 ```
 List, set, or interactively edit accounts.
 
 ```bash
 anmail use
-anmail use <account>
+anmail use <tag>
 ```
 Show the account you're using,
-or switch to account `<account>`.
+or switch to account `<tag>`.
 
 ## Roadmap
 
