@@ -50,6 +50,17 @@ cp anmail ~/.local/bin/anmail
 chmod +x ~/.local/bin/anmail
 ```
 
+Or... u can use soft link, belike:
+
+```bash
+git clone https://github.com/Annaler/anmail && cd anmail
+chmod +x anmail
+ln -s "$(pwd)/anmail" ~/.local/bin/ama
+#Us any name u like here  ^^^
+```
+
+By the way, just by `git pull`, u can update the script.
+
 ## Configuration
 
 Accounts live in `ANMAIL_CONFIG` (default to `~/.config/anmail/accounts.config`):
