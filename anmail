@@ -150,7 +150,7 @@ parse_accounts_file(){
         case "$1" in
             current) need_current=1; shift ;;
             accounts) need_accounts=1; shift;;
-            all)     need_current=1; need_accounts=1; shift ;;
+            all) need_current=1; need_accounts=1; shift ;;
             *) echo "unknown args: '$1'"; shift ;;
         esac
     done
