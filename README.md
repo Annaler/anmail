@@ -2,7 +2,7 @@
 
 A thin wrapper around [himalaya](https://github.com/pimalaya/himalaya).
 
-**Version**: v0.3.3 (2026-10-12)
+**Version**: v0.3.4 (2026-11-01)
 
 ## What it is
 
@@ -11,6 +11,10 @@ anmail is a thin wrapper around himalaya that aims to fill the gaps in `himalaya
 It doesn't implement IMAP/SMTP, nor does it manage authentication or passwords.
 
 All receiving, sending, authentication, and synchronization are handled by `himalaya`.
+
+anmail doesn't keep its own account list either — accounts are read straight
+from himalaya's config. The only thing anmail remembers is which tag you
+last picked with `anmail use`.
 
 ## Why
 
@@ -35,6 +39,7 @@ This is where anmail starts. I can use `himalaya` in my own way now.
 
 - [himalaya](https://github.com/pimalaya/himalaya) — **IMAP/SMTP must be configured**
 - An `VISUAL` [defaults to `$EDITOR` (defaults to `nvim`)]
+- bash 3.0+ (already the shebang)
 
 ps: `VISUAL`/`EDITOR` must be a single executable path.
 Values with arguments (e.g. `code --wait`) are not supported.
@@ -63,29 +68,22 @@ By the way, just by `git pull`, u can update the script.
 
 ## Configuration
 
-Accounts live in `ANMAIL_CONFIG` (default to `~/.config/anmail/accounts.config`):
-```
-[using]
-current=me
-[accounts]
-#tag=from
-me="Your Name" <you@example.com>
-work="Work Name" <work@company.com>
-personal=private_mail@outlook.com
-```
+Accounts come from himalaya. anmail reads
+`~/.config/himalaya/config.toml` (or `$XDG_CONFIG_HOME`, or
+`$HIMALAYA_CONFIG` if set) and picks up the `<tag>` and `from` of every
+`[accounts.<tag>]` section:
 
-Manage them with `anmail set`:
-
-```bash
-anmail set work '"Work Name" <work@company.com>'
-anmail set -i
-anmail set list
+```toml
+[accounts.me]
+email = "you@example.com"
+display-name = "Your Name"
 ```
 
-The account tag before '=' is what u pass to `-a / --account`,
-so the <tag> must be the same as what u configurated in himalaya's config
-       ^   ^ => [accounts.<tag>] <- ~/.config/himalaya/config.toml
-                          ^   ^
+The tag is what u pass to -t / --tag, and it must match what's in
+himalaya's config — because it is himalaya's config. anmail never
+writes that file.
+
+Check what it sees with `anmail show`.
 
 ## Usage
 
@@ -95,6 +93,9 @@ anmail send <To> [Subject]
 Write the body in your editor; the header comes from your command.
 `anmail` composes them into a mail and pipes it to `himalaya message send`.
 Then, `himalaya` "send them home".
+
+The account is picked in this order: `-t`/`--tag`, then whatever
+anmail use stored, then himalaya's own default.
 
 ```bash
 anmail list [options]...
@@ -108,11 +109,10 @@ anmail read <ID> [options]
 Just like the previous one, but `himalaya message read`.
 
 ```bash
-anmail set list
-anmail set <tag> <from>
-anmail set -i [tag] [from]
+anmail show
 ```
-List, set, or interactively edit accounts.
+List accounts as anmail sees them (tag + From), with * marking the
+currently selected one.
 
 ```bash
 anmail use
@@ -121,13 +121,20 @@ anmail use <tag>
 Show the account you're using,
 or switch to account `<tag>`.
 
+ps: `anmail` use only stores a tag in
+`${XDG_STATE_HOME:-~/.local/state}/anmail/current`.
+
+It doesn't touch himalaya's config — so himalaya's own default still
+applies when nothing is selected.
+
 ## Roadmap
 
 - [x] `send <To> [Subject]` — compose and send a mail
 - [x] `list` — just pass "words" to himalaya (1st working ver.)
 - [x] `read <ID>` — same as the previous one
-- [x] `set` (list) — set/list account config
-- [x] `use [account]` — switch account to use
+- [x] `show` — list account from `himalaya` config
+- [x] `use [account]` — switch account to use (local state only)
+- [x] read accounts from himalaya's config (drop `accounts.config`)
 - [ ] `reply <ID>` — 考虑加入自动对原文保留
 - [ ] ...
 
